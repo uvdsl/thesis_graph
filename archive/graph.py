@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
 
-ITERATIONS = 2
-NUMBER_OF_AGENTS = 10
+ITERATIONS = 100
+NUMBER_OF_AGENTS = 20
 ROUNDS = 100
 SAVE_IMG = False
 # MC = 500
@@ -155,8 +155,7 @@ def to_adj_matrix(graph,M):
 
 
 def run_game(game, chats, agents, with_app_links=True, conf=True):
-    global c_bl_n_auth_base, c_bl_n_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc
-    global c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc
+    global c_bl_n, c_sl_n, t_bl_n, t_sl_n, c_bl_nn, c_sl_nn, t_bl_nn, t_sl_nn
     # print("App Links:",with_app_links)
     # print()
     for chat in chats:
@@ -185,47 +184,70 @@ def run_game(game, chats, agents, with_app_links=True, conf=True):
 
     try: 
         # print("Normalized")
-        auth_base_n, auth_dc_n = break_target(M.copy(), node_agent, agents)
+        data_n = break_target(M.copy(), node_agent, agents)
         # print()
         # print("Not Normalized")
-        auth_base_nn, auth_dc_nn  = break_target(M.copy(), node_agent, agents, norm=False)
+        data_nn = break_target(M.copy(), node_agent, agents, norm=False)
         if conf:
             if with_app_links:
-                c_bl_n_auth_base = np.concatenate((c_bl_n_auth_base, auth_base_n), axis=None)
-                c_bl_n_auth_dc = np.concatenate((c_bl_n_auth_dc, auth_dc_n), axis=None)
-                c_bl_nn_auth_base = np.concatenate((c_bl_nn_auth_base, auth_base_nn), axis=None)
-                c_bl_nn_auth_dc = np.concatenate((c_bl_nn_auth_dc, auth_dc_nn), axis=None)
+                c_bl_n = c_bl_n.append(data_n, ignore_index=True)
+                c_bl_nn = c_bl_nn.append(data_nn, ignore_index=True)
             else:
-                c_sl_n_auth_base = np.concatenate((c_sl_n_auth_base, auth_base_n), axis=None)
-                c_sl_n_auth_dc = np.concatenate((c_sl_n_auth_dc, auth_dc_n), axis=None)
-                c_sl_nn_auth_base = np.concatenate((c_sl_nn_auth_base, auth_base_nn), axis=None)
-                c_sl_nn_auth_dc = np.concatenate((c_sl_nn_auth_dc, auth_dc_nn), axis=None)
+                c_sl_n = c_sl_n.append(data_n, ignore_index=True)
+                c_sl_nn = c_sl_nn.append(data_nn, ignore_index=True)
         else:
             if with_app_links:
-                t_bl_n_auth_base = np.concatenate((t_bl_n_auth_base, auth_base_n), axis=None)
-                t_bl_n_auth_dc = np.concatenate((t_bl_n_auth_dc, auth_dc_n), axis=None)
-                t_bl_nn_auth_base = np.concatenate((t_bl_nn_auth_base, auth_base_nn), axis=None)
-                t_bl_nn_auth_dc = np.concatenate((t_bl_nn_auth_dc, auth_dc_nn), axis=None)
+                t_bl_n = t_bl_n.append(data_n, ignore_index=True)
+                t_bl_nn = t_bl_nn.append(data_nn, ignore_index=True)
             else:
-                t_sl_n_auth_base = np.concatenate((t_sl_n_auth_base, auth_base_n), axis=None)
-                t_sl_n_auth_dc = np.concatenate((t_sl_n_auth_dc, auth_dc_n), axis=None)
-                t_sl_nn_auth_base = np.concatenate((t_sl_nn_auth_base, auth_base_nn), axis=None)
-                t_sl_nn_auth_dc = np.concatenate((t_sl_nn_auth_dc, auth_dc_nn), axis=None)
+                t_sl_n = t_sl_n.append(data_n, ignore_index=True)
+                t_sl_nn = t_sl_nn.append(data_nn, ignore_index=True)
     except Exception as err:
         print(err)
     # print()
-    # return M
+    return M
+
+def add_plot(data):
+    plt.figure()
+    plt.hist(data, density=True, bins=10)  # density=False would make counts
+    plt.ylim(0,data.shape[0]//2)
+    plt.xlim(0,1)
+    plt.ylabel('Frequency')
+    plt.xlabel('Score')
 
 
 def break_target(A, node_agent, agents, norm=True):
     # print(A.shape)
     k = 1
     M = A.copy()
-    G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)    
+    G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
+    node_count = len(G_n.nodes())
+    edge_count = len(G_n.edges())
+    in_deg = np.mean(list(map(lambda x: x[1],G_n.in_degree())))
+    # print("In_Deg:\t",in_deg)
+    nodes = list(G_n.nodes())
+    
+    new_node = len(nodes)
+    index = new_node
+    for agent_id in range(len(agents)):
+        G_n.add_node(index+agent_id)
+        for node in nodes:
+            if G_n.in_degree(node) == 0  and node_agent[node] == agent_id:
+                G_n.add_edge(index+agent_id, node)
     G_t = nx.transitive_closure(G_n)
     M_t = nx.to_numpy_array(G_t, dtype=np.float64)
     auth_base = _hits.hits_authorities(M_t, normalized=norm)
-    # TODO
+    if SAVE_IMG:
+        add_plot(auth_base)
+    base_sum = np.sum(auth_base)
+    base_median = np.median(auth_base)
+    base_mean = np.mean(auth_base)
+    # print("Sum:\t",base_sum)
+    # print("Median:\t",base_median)
+    # print("Mean:\t",base_mean)
+    G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
+    G_t = nx.transitive_closure(G_n)
+    M_t = nx.to_numpy_array(G_t, dtype=np.float64)
     while True:
         G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
         stats = nx.betweenness_centrality(G_n)  
@@ -234,16 +256,31 @@ def break_target(A, node_agent, agents, norm=True):
         M = np.delete(M, node, axis=1)
         G_n.remove_node(node)
         if not nx.is_weakly_connected(G_n):
-            auth_dc = np.zeros(len(G_n.nodes()), dtype=np.float64)
-            auth_dc_index = 0
-            subgraphs = [G_n.subgraph(c).copy() for c in nx.connected_components(G_n)]
-            for G_s in subgraphs:
-                G_ts = nx.transitive_closure(G_s)
-                M_ts = nx.to_numpy_array(G_ts, dtype=np.float64)
-                auth_dc[auth_dc_index:] = _hits.hits_authorities(M_ts, normalized=norm)        
-                auth_dc_index += len(G_s.nodes())   
-            return auth_base, auth_dc
+            index = new_node
+            nodes = list(G_n.nodes())
+            for agent_id in range(len(agents)):
+                G_n.add_node(index+agent_id)    
+                for node in nodes:
+                    if G_n.in_degree(node) == 0 and node_agent[node] == agent_id:
+                        G_n.add_edge(index+agent_id, node)
+            G_t = nx.transitive_closure(G_n)
+            M_t = nx.to_numpy_array(G_t, dtype=np.float64)
+            auth_dc = _hits.hits_authorities(M_t, normalized=norm)        
+            # print("Disconnectedness")
+            dc_sum = np.sum(auth_dc)
+            dc_median = np.median(auth_dc)
+            dc_mean = np.mean(auth_dc)
+            # print("Sum:\t",dc_sum)
+            # print("Median:\t",dc_median)
+            # print("Mean:\t",dc_mean)
+            if SAVE_IMG:
+                add_plot(auth_dc)
+                plt.show()
+            d = np.array([node_count,edge_count,base_sum,base_median,base_mean,dc_sum,dc_median,dc_mean,in_deg,k])
+            return pd.Series(data=d, index=['Nodes', 'Edges', 'Sum (Base)', 'Median (Base)', 'Mean (Base)', 'Sum (DC)', 'Median (DC)', 'Mean (DC)', 'IN_DEG', 'DISCON'])    
+            # return k
         k += 1
+    return -1
 
 
 
@@ -252,28 +289,22 @@ def break_target(A, node_agent, agents, norm=True):
 # c confidential
 # bl both links
 # n normalized
-c_bl_n_auth_base = np.array([], dtype=np.float64)
-c_bl_n_auth_dc = np.array([], dtype=np.float64)
-c_bl_nn_auth_base = np.array([], dtype=np.float64)
-c_bl_nn_auth_dc = np.array([], dtype=np.float64)
-c_sl_n_auth_base = np.array([], dtype=np.float64)
-c_sl_n_auth_dc = np.array([], dtype=np.float64)
-c_sl_nn_auth_base = np.array([], dtype=np.float64)
-c_sl_nn_auth_dc = np.array([], dtype=np.float64)
-t_bl_n_auth_base = np.array([], dtype=np.float64)
-t_bl_n_auth_dc = np.array([], dtype=np.float64)
-t_bl_nn_auth_base = np.array([], dtype=np.float64)
-t_bl_nn_auth_dc = np.array([], dtype=np.float64)
-t_sl_n_auth_base = np.array([], dtype=np.float64)
-t_sl_n_auth_dc = np.array([], dtype=np.float64)
-t_sl_nn_auth_base = np.array([], dtype=np.float64)
-t_sl_nn_auth_dc = np.array([], dtype=np.float64)
+cols = ['Nodes', 'Edges', 'Sum (Base)', 'Median (Base)', 'Mean (Base)', 'Sum (DC)', 'Median (DC)', 'Mean (DC)', 'IN_DEG', 'DISCON']
+c_bl_n = pd.DataFrame(columns=cols)
+c_bl_nn = pd.DataFrame(columns=cols)
+c_sl_n = pd.DataFrame(columns=cols)
+c_sl_nn = pd.DataFrame(columns=cols)
+t_bl_n = pd.DataFrame(columns=cols)
+t_bl_nn = pd.DataFrame(columns=cols)
+t_sl_n = pd.DataFrame(columns=cols)
+t_sl_nn = pd.DataFrame(columns=cols)
+
 
 
 
 
 for its in range(ITERATIONS):
-    
+
     # # generate agent graph for CHATS OF TWOS
     # beta model
     G_a = nx.generators.random_graphs.connected_watts_strogatz_graph(NUMBER_OF_AGENTS,4,0.25)
@@ -308,6 +339,7 @@ for its in range(ITERATIONS):
     game = generate(chats, agents)
 
 
+
     # confidential
     # print("CONFIDENTIAL")
     # print()
@@ -334,43 +366,81 @@ for its in range(ITERATIONS):
 
 
 
-def add_plot(data, title):
-    fig = plt.figure(figsize =(10, 7))
-    # Creating axes instance
-    ax = fig.add_axes([0, 0, 1, 1])
-    # Creating plot
-    bp = ax.boxplot(data)
 
+
+print(c_bl_n.shape)
 # print("c_bl_n")
-add_plot([c_bl_n_auth_base, c_bl_n_auth_dc])
-plt.show()
+# print(c_bl_n.mean(axis=0))
+ds = c_bl_n.mean(axis=0)
+ds.name = "c_bl_n"
+ds.to_pickle(f"./data/c_bl_n.pkl") 
 # print()
 # print("c_bl_nn")
-add_plot([c_bl_nn_auth_base, c_bl_nn_auth_dc])
-plt.show()
+# print(c_bl_nn.mean(axis=0))
+ds = c_bl_nn.mean(axis=0)
+ds.name = "c_bl_nn"
+ds.to_pickle(f"./data/c_bl_nn.pkl") 
 # print()
 # print("c_sl_n")
-add_plot([c_sl_n_auth_base, c_sl_n_auth_dc])
-plt.show()
+# print(c_sl_n.mean(axis=0))
+ds = c_sl_n.mean(axis=0)
+ds.name = "c_sl_n"
+ds.to_pickle(f"./data/c_sl_n.pkl") 
 # print()
 # print("c_sl_nn")
-add_plot([c_sl_nn_auth_base, c_sl_nn_auth_dc])
-plt.show()
+# print(c_sl_nn.mean(axis=0))
+ds = c_sl_nn.mean(axis=0)
+ds.name = "c_sl_nn"
+ds.to_pickle(f"./data/c_sl_nn.pkl") 
 # print()
 # print("t_bl_n")
-add_plot([t_bl_n_auth_base, t_bl_n_auth_dc])
-plt.show()
+# print(t_bl_n.mean(axis=0))
+ds = t_bl_n.mean(axis=0)
+ds.name = "t_bl_n"
+ds.to_pickle(f"./data/t_bl_n.pkl") 
 # print()
 # print("t_bl_nn")
-add_plot([t_bl_nn_auth_base, t_bl_nn_auth_dc])
-plt.show()
+# print(t_bl_nn.mean(axis=0))
+ds = t_bl_nn.mean(axis=0)
+ds.name = "t_bl_nn"
+ds.to_pickle(f"./data/t_bl_nn.pkl") 
 # print()
 # print("t_sl_n")
-add_plot([t_sl_n_auth_base, t_sl_n_auth_dc])
-plt.show()
+# print(t_sl_n.mean(axis=0))
+ds = t_sl_n.mean(axis=0)
+ds.name = "t_sl_n"
+ds.to_pickle(f"./data/t_sl_n.pkl") 
 # print()
 # print("t_sl_nn")
-add_plot([t_sl_nn_auth_base, t_sl_nn_auth_dc])
-plt.show()
+# print(t_sl_nn.mean(axis=0))
+ds = t_sl_nn.mean(axis=0)
+ds.name = "t_sl_nn"
+ds.to_pickle(f"./data/t_sl_nn.pkl") 
 # print()
 
+
+
+
+print()
+print(pd.read_pickle(f"./data/c_bl_n.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/c_bl_nn.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/c_sl_n.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/c_sl_nn.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/t_bl_n.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/t_bl_nn.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/t_sl_n.pkl"))
+
+print()
+print(pd.read_pickle(f"./data/t_sl_nn.pkl"))
