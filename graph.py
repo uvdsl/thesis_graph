@@ -14,8 +14,8 @@ import _hits
 import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
-
-ITERATIONS = 10
+CORES = 5
+ITERATIONS = 30
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
@@ -399,7 +399,7 @@ if __name__ == "__main__":
     t_sl_nn_auth_dc = mp.Queue()
 
     iteration_ids = range(0, ITERATIONS)
-    pool = mp.Pool(processes=5, initializer=init, initargs=(
+    pool = mp.Pool(processes=CORES, initializer=init, initargs=(
         c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc, )
     )
     results = pool.map(sim, iteration_ids)
