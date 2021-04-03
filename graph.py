@@ -14,8 +14,8 @@ import _hits
 import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
-CORES = 5
-ITERATIONS = 30
+CORES = 14
+ITERATIONS = 15
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
@@ -61,9 +61,9 @@ def get_active_agents(agents):
     return result
 
 
-def generate(chats, agents):
+def generate(chats, agents, rounds=ROUNDS):
     result = {}
-    for iround in range(ROUNDS):
+    for iround in range(rounds):
         result[iround] = []
         agents_active = get_active_agents(agents)
         for i in range(len(agents_active)):
@@ -97,6 +97,9 @@ def add_node_to_graph(agent_id, node_id, chats, agents, graph, graph_transitive)
     for r in range(len_ref):
         ref = cp_ref[r]
         trefs = graph_transitive.get(ref)
+        if trefs is None:
+            graph_transitive[ref] = List.empty_list(int64)
+            trefs = graph_transitive.get(ref)
         for t in trefs:
             if t in references:
                 references.remove(t)
@@ -112,11 +115,10 @@ def add_node_to_graph(agent_id, node_id, chats, agents, graph, graph_transitive)
                 references.append(t)
     graph_transitive[node_id] = references
 
-
 # @njit(nogil=True)
-def run(game, chats, agents, graph, graph_transitive, node_chat, node_agent):
-    for iround in range(ROUNDS):
-        base_node_id = len(graph)  # then just + chad_id gives unique id
+def run(game, chats, agents, graph, graph_transitive, node_chat, node_agent, rounds=ROUNDS):
+    for iround in range(rounds):
+        base_node_id = max(graph, key=int) + 1 # len(graph)  # then just + chad_id gives unique id
         # agents_active = get_active_agents(agents)
         agents_active = game[iround]
         # # print(agents_active)
@@ -146,7 +148,6 @@ def run(game, chats, agents, graph, graph_transitive, node_chat, node_agent):
                     break
             chats[chat_id].current_nodes.append(node_id)
 
-
 @njit(nogil=True)
 def to_adj_matrix(graph, M):
     for i in prange(len(graph)):
@@ -154,12 +155,26 @@ def to_adj_matrix(graph, M):
             j = graph[i][k]
             M[i, j] = True
 
+# to adj list
+def from_adj_matrix(M):
+    result = Dict.empty(int64, ListType(int64))
+    n,m = M.shape
+    for i in prange(n):
+        if result.get(i) is None:
+            result[i] = List.empty_list(int64)
+        for j in prange(m):
+            if not M[i,j]:
+                continue
+            result[i].append(j)
+    return result
+
 
 def run_game(game, chats, agents, with_app_links=True, conf=True):
-    # global lock_c_bl_n_auth_base, lock_c_bl_n_auth_dc, lock_c_bl_nn_auth_base, lock_c_bl_nn_auth_dc, lock_c_sl_n_auth_base, lock_c_sl_n_auth_dc, lock_c_sl_nn_auth_base, lock_c_sl_nn_auth_dc
-    # global lock_t_bl_n_auth_base, lock_t_bl_n_auth_dc, lock_t_bl_nn_auth_base, lock_t_bl_nn_auth_dc, lock_t_sl_n_auth_base, lock_t_sl_n_auth_dc, lock_t_sl_nn_auth_base, lock_t_sl_nn_auth_dc
     global c_bl_n_auth_base, c_bl_n_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc
     global c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc
+    global c_bl_n_auth_rec, c_bl_nn_auth_rec, c_sl_n_auth_rec, c_sl_nn_auth_rec, t_bl_n_auth_rec, t_bl_nn_auth_rec, t_sl_n_auth_rec, t_sl_nn_auth_rec
+    global c_bl_n_auth_rec_long, c_bl_nn_auth_rec_long, c_sl_n_auth_rec_long, c_sl_nn_auth_rec_long, t_bl_n_auth_rec_long, t_bl_nn_auth_rec_long, t_sl_n_auth_rec_long, t_sl_nn_auth_rec_long
+    
     # print("App Links:",with_app_links)
     # print()
     for chat in chats:
@@ -188,8 +203,8 @@ def run_game(game, chats, agents, with_app_links=True, conf=True):
 
     try:
         # print("Normalized")
-        auth_base_n, auth_dc_n, auth_base_nn, auth_dc_nn = break_target(
-            M.copy(), node_agent, agents)
+        auth_base_n, auth_dc_n, auth_base_nn, auth_dc_nn, auth_rec_n, auth_rec_nn, auth_rec_long_n, auth_rec_long_nn = break_target(
+            M.copy(), node_agent, agents, chats, node_chat )
         # print()
         # print("Not Normalized")
         # auth_base_nn, auth_dc_nn = break_target(
@@ -199,38 +214,54 @@ def run_game(game, chats, agents, with_app_links=True, conf=True):
             if with_app_links:
                 c_bl_n_auth_base.put(auth_base_n)
                 c_bl_n_auth_dc.put(auth_dc_n)
+                c_bl_n_auth_rec.put(auth_rec_n)
+                c_bl_n_auth_rec_long.put(auth_rec_long_n)
                 c_bl_nn_auth_base.put(auth_base_nn)
                 c_bl_nn_auth_dc.put(auth_dc_nn)
+                c_bl_nn_auth_rec.put(auth_rec_nn)
+                c_bl_nn_auth_rec_long.put(auth_rec_long_nn)
             else:
                 c_sl_n_auth_base.put(auth_base_n)
                 c_sl_n_auth_dc.put(auth_dc_n)
+                c_sl_n_auth_rec.put(auth_rec_n)
+                c_sl_n_auth_rec_long.put(auth_rec_long_n)
                 c_sl_nn_auth_base.put(auth_base_nn)
                 c_sl_nn_auth_dc.put(auth_dc_nn)
+                c_sl_nn_auth_rec.put(auth_rec_nn)
+                c_sl_nn_auth_rec_long.put(auth_rec_long_nn)
         else:
             if with_app_links:
                 t_bl_n_auth_base.put(auth_base_n)
                 t_bl_n_auth_dc.put(auth_dc_n)
+                t_bl_n_auth_rec.put(auth_rec_n)
+                t_bl_n_auth_rec_long.put(auth_rec_long_n)
                 t_bl_nn_auth_base.put(auth_base_nn)
                 t_bl_nn_auth_dc.put(auth_dc_nn)
+                t_bl_nn_auth_rec.put(auth_rec_nn)
+                t_bl_nn_auth_rec_long.put(auth_rec_long_nn)
             else:
                 t_sl_n_auth_base.put(auth_base_n)
                 t_sl_n_auth_dc.put(auth_dc_n)
+                t_sl_n_auth_rec.put(auth_rec_n)
+                t_sl_n_auth_rec_long.put(auth_rec_long_n)
                 t_sl_nn_auth_base.put(auth_base_nn)
                 t_sl_nn_auth_dc.put(auth_dc_nn)
+                t_sl_nn_auth_rec.put(auth_rec_nn)
+                t_sl_nn_auth_rec_long.put(auth_rec_long_nn)
     except Exception as err:
         print("Exception occured:", err)
     # print()
     # return M
 
 
-def break_target(A, node_agent, agents, norm=False):
+def break_target(A, node_agent, agents, chats, node_chat):
     # print(A.shape)
     k = 1
     M = A.copy()
     G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
     G_t = nx.transitive_closure(G_n)
     M_t = nx.to_numpy_array(G_t, dtype=np.float64)
-    auth_base_nn = _hits.hits_authorities(M_t, normalized=norm)
+    auth_base_nn = _hits.hits_authorities(M_t, normalized=False)
     while True:
         G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
         stats = nx.betweenness_centrality(G_n)
@@ -251,14 +282,55 @@ def break_target(A, node_agent, agents, norm=False):
                 M_ts = nx.to_numpy_array(G_ts, dtype=np.float64)
                 next_index = auth_dc_index + len(G_s.nodes())
                 auth_dc_nn[auth_dc_index:next_index] = _hits.hits_authorities(
-                    M_ts, normalized=norm)
+                    M_ts, normalized=False)
                 auth_dc_index = next_index
             # normalizing
             auth_base_n = auth_base_nn / auth_base_nn.sum()
             auth_dc_n = auth_dc_nn / auth_dc_nn.sum()
-            # a = a / a.sum()
-            return auth_base_n, auth_dc_n, auth_base_nn, auth_dc_nn
+            # recovery
+            auth_rec_n, auth_rec_nn, auth_rec_long_n, auth_rec_long_nn = recover(chats, agents, node_chat, node_agent, G_n)
+            return auth_base_n, auth_dc_n, auth_base_nn, auth_dc_nn, auth_rec_n, auth_rec_nn, auth_rec_long_n, auth_rec_long_nn
         k += 1
+
+def recover(chats, agents, node_chat, node_agent, G):
+    nodes = list(G.nodes())
+    index = max(nodes)+1
+    G_old = G.copy()
+    
+    for agent_id in range(len(agents)):
+        G.add_node(index+agent_id)    
+        for node in nodes:
+            if G_old.in_degree(node) == 0 and node_chat[node] in agents[agent_id].chats:
+                G.add_edge(index+agent_id, node)
+                node_chat[index+agent_id] = node_chat[node]
+                node_agent[index+agent_id] = agent_id
+                # chats[node_chat[node]].current_nodes.append(index+agent_id)
+
+    # print(nx.is_connected(G.to_undirected()), index, [n for n in range(max(G.nodes())) if not n in G.nodes()])
+    G_t = nx.transitive_closure(G)
+    M = nx.to_numpy_array(G, dtype=np.float64)
+    M_t = nx.to_numpy_array(G_t, dtype=np.float64)
+
+    auth_rec_nn =_hits.hits_authorities(M_t, normalized=False)
+    auth_rec_n = auth_rec_nn / auth_rec_nn.sum()
+
+    # rec_game = generate(chats,agents,rounds=10)
+    # rec_graph = from_adj_matrix(M)
+    # rec_graph_transitive = from_adj_matrix(M_t)
+    # run(rec_game, chats, agents, rec_graph, rec_graph_transitive, node_chat, node_agent, rounds=10)
+    # size = max(rec_graph, key=int)
+    # M = np.zeros((size,size), dtype=np.float64)
+    # to_adj_matrix(rec_graph, M)
+    # G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
+    # G_t = nx.transitive_closure(G_n)
+    # M_t = nx.to_numpy_array(G_t, dtype=np.float64)
+
+    # auth_rec_long_nn =_hits.hits_authorities(M_t, normalized=False)
+    # auth_rec_long_n = auth_rec_long_nn / auth_rec_long_nn.sum()
+    auth_rec_long_nn = []
+    auth_rec_long_n = []
+
+    return auth_rec_n, auth_rec_nn, auth_rec_long_n, auth_rec_long_nn
 
 
 def sim(its):
@@ -332,11 +404,14 @@ def get_box_plot_data(labels, bp):
 def add_plot(data, title):
     fig, ax = plt.subplots()
     if title[-2:] == '_n':
-        ax.set_ylim(-0.00025, 0.0095)
+        ax.set_ylim(-0.00025,  0.0105) # 0.0235) #
         ax.set_yticks([0, 0.001, 0.002, 0.003, 0.004,
-                       0.005, 0.006, 0.007, 0.008, 0.009])
+                       0.005, 0.006, 0.007, 0.008, 0.009, 0.010, 
+                    #    0.011, 0.012, 0.013, 0.014,
+                    #    0.015, 0.016, 0.017, 0.018, 0.019, 0.020, 0.021, 0.022, 0.023 
+                       ])
     ax.set_title(title)
-    labels = ['base', 'disconnected']
+    labels = ['base', 'disconnected', 'initial recovery' ] #, 'long term evolution']
     bp = ax.boxplot(data, labels=labels, showfliers=False)
     plt.savefig(f'./img/{title}.png')
     # print(np.median(data[0]), np.median(data[1]))
@@ -348,10 +423,12 @@ def add_plot(data, title):
     print()
 
 
-def init(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15):
+def init(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, r0, r1, r2, r3, r4, r5, r6, r7, r8,r9,r10,r11,r12,r13,r14,r15):
     global c_bl_n_auth_base, c_bl_n_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc
     global c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc
-
+    global c_bl_n_auth_rec, c_bl_nn_auth_rec, c_sl_n_auth_rec, c_sl_nn_auth_rec, t_bl_n_auth_rec, t_bl_nn_auth_rec, t_sl_n_auth_rec, t_sl_nn_auth_rec
+    global c_bl_n_auth_rec_long, c_bl_nn_auth_rec_long, c_sl_n_auth_rec_long, c_sl_nn_auth_rec_long, t_bl_n_auth_rec_long, t_bl_nn_auth_rec_long, t_sl_n_auth_rec_long, t_sl_nn_auth_rec_long
+    
     c_bl_n_auth_base = a0
     c_bl_n_auth_dc = a1
     c_bl_nn_auth_base = a2
@@ -368,6 +445,22 @@ def init(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15):
     t_sl_n_auth_dc = a13
     t_sl_nn_auth_base = a14
     t_sl_nn_auth_dc = a15
+    c_bl_n_auth_rec = r0
+    c_bl_nn_auth_rec = r1
+    c_sl_n_auth_rec = r2
+    c_sl_nn_auth_rec = r3
+    t_bl_n_auth_rec = r4
+    t_bl_nn_auth_rec = r5
+    t_sl_n_auth_rec = r6
+    t_sl_nn_auth_rec = r7
+    c_bl_n_auth_rec_long = r8
+    c_bl_nn_auth_rec_long = r9
+    c_sl_n_auth_rec_long = r10
+    c_sl_nn_auth_rec_long = r11
+    t_bl_n_auth_rec_long = r12
+    t_bl_nn_auth_rec_long = r13
+    t_sl_n_auth_rec_long = r14
+    t_sl_nn_auth_rec_long = r15
 
 
 def extract(queue):
@@ -397,10 +490,27 @@ if __name__ == "__main__":
     t_sl_n_auth_dc = mp.Queue()
     t_sl_nn_auth_base = mp.Queue()
     t_sl_nn_auth_dc = mp.Queue()
+    c_bl_n_auth_rec = mp.Queue()
+    c_bl_nn_auth_rec = mp.Queue()
+    c_sl_n_auth_rec = mp.Queue()
+    c_sl_nn_auth_rec = mp.Queue()
+    t_bl_n_auth_rec = mp.Queue()
+    t_bl_nn_auth_rec = mp.Queue()
+    t_sl_n_auth_rec = mp.Queue()
+    t_sl_nn_auth_rec = mp.Queue()
+    c_bl_n_auth_rec_long = mp.Queue()
+    c_bl_nn_auth_rec_long = mp.Queue()
+    c_sl_n_auth_rec_long = mp.Queue()
+    c_sl_nn_auth_rec_long = mp.Queue()
+    t_bl_n_auth_rec_long = mp.Queue()
+    t_bl_nn_auth_rec_long = mp.Queue()
+    t_sl_n_auth_rec_long = mp.Queue()
+    t_sl_nn_auth_rec_long = mp.Queue()
+
 
     iteration_ids = range(0, ITERATIONS)
     pool = mp.Pool(processes=CORES, initializer=init, initargs=(
-        c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc, )
+        c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc, c_bl_n_auth_rec, c_bl_nn_auth_rec, c_sl_n_auth_rec, c_sl_nn_auth_rec, t_bl_n_auth_rec, t_bl_nn_auth_rec, t_sl_n_auth_rec, t_sl_nn_auth_rec,  c_bl_n_auth_rec_long, c_bl_nn_auth_rec_long, c_sl_n_auth_rec_long, c_sl_nn_auth_rec_long, t_bl_n_auth_rec_long, t_bl_nn_auth_rec_long, t_sl_n_auth_rec_long, t_sl_nn_auth_rec_long, )
     )
     results = pool.map(sim, iteration_ids)
     pool.terminate()
@@ -423,30 +533,46 @@ if __name__ == "__main__":
     t_sl_n_auth_dc = extract(t_sl_n_auth_dc)
     t_sl_nn_auth_base = extract(t_sl_nn_auth_base)
     t_sl_nn_auth_dc = extract(t_sl_nn_auth_dc)
+    c_bl_n_auth_rec = extract(c_bl_n_auth_rec)
+    c_bl_nn_auth_rec = extract(c_bl_nn_auth_rec)
+    c_sl_n_auth_rec = extract(c_sl_n_auth_rec)
+    c_sl_nn_auth_rec = extract(c_sl_nn_auth_rec)
+    t_bl_n_auth_rec = extract(t_bl_n_auth_rec)
+    t_bl_nn_auth_rec = extract(t_bl_nn_auth_rec)
+    t_sl_n_auth_rec = extract(t_sl_n_auth_rec)
+    t_sl_nn_auth_rec = extract(t_sl_nn_auth_rec)
+    c_bl_n_auth_rec_long = extract(c_bl_n_auth_rec_long)
+    c_bl_nn_auth_rec_long = extract(c_bl_nn_auth_rec_long)
+    c_sl_n_auth_rec_long = extract(c_sl_n_auth_rec_long)
+    c_sl_nn_auth_rec_long = extract(c_sl_nn_auth_rec_long)
+    t_bl_n_auth_rec_long = extract(t_bl_n_auth_rec_long)
+    t_bl_nn_auth_rec_long = extract(t_bl_nn_auth_rec_long)
+    t_sl_n_auth_rec_long = extract(t_sl_n_auth_rec_long)
+    t_sl_nn_auth_rec_long = extract(t_sl_nn_auth_rec_long)
 
     # print("c_bl_n")
-    add_plot([c_bl_n_auth_base, c_bl_n_auth_dc], "c_bl_n")
+    add_plot([c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_n_auth_rec ], "c_bl_n")# c_bl_n_auth_rec_long], "c_bl_n")
     # print()
     # print("c_bl_nn")
-    add_plot([c_bl_nn_auth_base, c_bl_nn_auth_dc], "c_bl_nn")
+    add_plot([c_bl_nn_auth_base, c_bl_nn_auth_dc, c_bl_nn_auth_rec ], "c_bl_nn")# c_bl_nn_auth_rec_long], "c_bl_nn")
     # print()
     # print("c_sl_n")
-    add_plot([c_sl_n_auth_base, c_sl_n_auth_dc], "c_sl_n")
+    add_plot([c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_n_auth_rec ], "c_sl_n")# c_sl_n_auth_rec_long], "c_sl_n")
     # print()
     # print("c_sl_nn")
-    add_plot([c_sl_nn_auth_base, c_sl_nn_auth_dc], "c_sl_nn")
+    add_plot([c_sl_nn_auth_base, c_sl_nn_auth_dc, c_sl_nn_auth_rec ], "c_sl_nn")# c_sl_nn_auth_rec_long], "c_sl_nn")
     # print()
     # print("t_bl_n")
-    add_plot([t_bl_n_auth_base, t_bl_n_auth_dc], "t_bl_n")
+    add_plot([t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_n_auth_rec ], "t_bl_n")# t_bl_n_auth_rec_long], "t_bl_n")
     # print()
     # print("t_bl_nn")
-    add_plot([t_bl_nn_auth_base, t_bl_nn_auth_dc], "t_bl_nn")
+    add_plot([t_bl_nn_auth_base, t_bl_nn_auth_dc, t_bl_nn_auth_rec ], "t_bl_nn")# t_bl_nn_auth_rec_long], "t_bl_nn")
     # print()
     # print("t_sl_n")
-    add_plot([t_sl_n_auth_base, t_sl_n_auth_dc], "t_sl_n")
+    add_plot([t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_n_auth_rec ], "t_sl_n")# t_sl_n_auth_rec_long], "t_sl_n")
     # print()
     # print("t_sl_nn")
-    add_plot([t_sl_nn_auth_base, t_sl_nn_auth_dc], "t_sl_nn")
+    add_plot([t_sl_nn_auth_base, t_sl_nn_auth_dc, t_sl_nn_auth_rec ], "t_sl_nn")# t_sl_nn_auth_rec_long], "t_sl_nn")
     # print()
 
     # plt.show()
