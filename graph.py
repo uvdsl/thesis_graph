@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
 
-ITERATIONS = 1000
+ITERATIONS = 10
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
@@ -188,11 +188,12 @@ def run_game(game, chats, agents, with_app_links=True, conf=True):
 
     try:
         # print("Normalized")
-        auth_base_n, auth_dc_n = break_target(M.copy(), node_agent, agents)
+        auth_base_n, auth_dc_n, auth_base_nn, auth_dc_nn = break_target(
+            M.copy(), node_agent, agents)
         # print()
         # print("Not Normalized")
-        auth_base_nn, auth_dc_nn = break_target(
-            M.copy(), node_agent, agents, norm=False)
+        # auth_base_nn, auth_dc_nn = break_target(
+        # M.copy(), node_agent, agents, norm=False)
 
         if conf:
             if with_app_links:
@@ -222,14 +223,14 @@ def run_game(game, chats, agents, with_app_links=True, conf=True):
     # return M
 
 
-def break_target(A, node_agent, agents, norm=True):
+def break_target(A, node_agent, agents, norm=False):
     # print(A.shape)
     k = 1
     M = A.copy()
     G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
     G_t = nx.transitive_closure(G_n)
     M_t = nx.to_numpy_array(G_t, dtype=np.float64)
-    auth_base = _hits.hits_authorities(M_t, normalized=norm)
+    auth_base_nn = _hits.hits_authorities(M_t, normalized=norm)
     while True:
         G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
         stats = nx.betweenness_centrality(G_n)
@@ -238,7 +239,7 @@ def break_target(A, node_agent, agents, norm=True):
         M = np.delete(M, node, axis=1)
         G_n.remove_node(node)
         if not nx.is_weakly_connected(G_n):
-            auth_dc = np.zeros(len(G_n.nodes()), dtype=np.float64)
+            auth_dc_nn = np.zeros(len(G_n.nodes()), dtype=np.float64)
             auth_dc_index = 0
             subgraphs = [G_n.subgraph(
                 c).copy() for c in nx.connected_components(G_n.to_undirected())]
@@ -249,10 +250,14 @@ def break_target(A, node_agent, agents, norm=True):
                 G_ts = nx.transitive_closure(G_s)
                 M_ts = nx.to_numpy_array(G_ts, dtype=np.float64)
                 next_index = auth_dc_index + len(G_s.nodes())
-                auth_dc[auth_dc_index:next_index] = _hits.hits_authorities(
+                auth_dc_nn[auth_dc_index:next_index] = _hits.hits_authorities(
                     M_ts, normalized=norm)
                 auth_dc_index = next_index
-            return auth_base, auth_dc
+            # normalizing
+            auth_base_n = auth_base_nn / auth_base_nn.sum()
+            auth_dc_n = auth_dc_nn / auth_dc_nn.sum()
+            # a = a / a.sum()
+            return auth_base_n, auth_dc_n, auth_base_nn, auth_dc_nn
         k += 1
 
 
@@ -311,11 +316,36 @@ def sim(its):
     print(f"{its+1} done.")
 
 
+def get_box_plot_data(labels, bp):
+    rows_list = []
+    for i in range(len(labels)):
+        dict1 = {}
+        dict1['label'] = labels[i]
+        dict1['lower_whisker'] = bp['whiskers'][i*2].get_ydata()[1]
+        dict1['lower_quartile'] = bp['boxes'][i].get_ydata()[1]
+        dict1['median'] = bp['medians'][i].get_ydata()[1]
+        dict1['upper_quartile'] = bp['boxes'][i].get_ydata()[2]
+        dict1['upper_whisker'] = bp['whiskers'][(i*2)+1].get_ydata()[1]
+        rows_list.append(dict1)
+    return pd.DataFrame(rows_list)
+
 def add_plot(data, title):
     fig, ax = plt.subplots()
+    if title[-2:] == '_n':
+        ax.set_ylim(-0.00025, 0.0095)
+        ax.set_yticks([0, 0.001, 0.002, 0.003, 0.004,
+                       0.005, 0.006, 0.007, 0.008, 0.009])
     ax.set_title(title)
-    bp = ax.boxplot(data, showfliers=False)
+    labels = ['base', 'disconnected']
+    bp = ax.boxplot(data, labels=labels, showfliers=False)
     plt.savefig(f'./img/{title}.png')
+    # print(np.median(data[0]), np.median(data[1]))
+    print()
+    print(title)
+    plot_data = get_box_plot_data(labels, bp)
+    plot_data.to_pickle(f'./data/{title}.pkl')
+    print(plot_data)
+    print()
 
 
 def init(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15):
@@ -422,7 +452,7 @@ if __name__ == "__main__":
     # plt.show()
 
     # print()
-    # # print((c_bl_n_auth_base), "\n", (c_bl_n_auth_dc))
+    # print((c_bl_n_auth_base), "\n", (c_bl_n_auth_dc))
 
     # print()
     # print((c_bl_nn_auth_base), "\n", (c_bl_nn_auth_dc))
