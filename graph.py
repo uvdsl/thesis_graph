@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
 
-ITERATIONS = 100
+ITERATIONS = 1000
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
@@ -230,7 +230,6 @@ def break_target(A, node_agent, agents, norm=True):
     G_t = nx.transitive_closure(G_n)
     M_t = nx.to_numpy_array(G_t, dtype=np.float64)
     auth_base = _hits.hits_authorities(M_t, normalized=norm)
-    # TODO
     while True:
         G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
         stats = nx.betweenness_centrality(G_n)
@@ -315,14 +314,13 @@ def sim(its):
 def add_plot(data, title):
     fig, ax = plt.subplots()
     ax.set_title(title)
-    bp = ax.boxplot(data)
+    bp = ax.boxplot(data, showfliers=False)
     plt.savefig(f'./img/{title}.png')
 
 
-def init( a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15):
+def init(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15):
     global c_bl_n_auth_base, c_bl_n_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc
     global c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc
-
 
     c_bl_n_auth_base = a0
     c_bl_n_auth_dc = a1
@@ -370,10 +368,10 @@ if __name__ == "__main__":
     t_sl_nn_auth_base = mp.Queue()
     t_sl_nn_auth_dc = mp.Queue()
 
-
     iteration_ids = range(0, ITERATIONS)
-    pool = mp.Pool(processes=4, initializer=init, initargs=(
-        c_bl_n_auth_base, c_bl_n_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc, c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc, ))
+    pool = mp.Pool(processes=5, initializer=init, initargs=(
+        c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_nn_auth_base, c_bl_nn_auth_dc, c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_nn_auth_base, c_sl_nn_auth_dc, t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_nn_auth_base, t_bl_nn_auth_dc, t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_nn_auth_base, t_sl_nn_auth_dc, )
+    )
     results = pool.map(sim, iteration_ids)
     pool.terminate()
     pool.join()
@@ -422,3 +420,27 @@ if __name__ == "__main__":
     # print()
 
     # plt.show()
+
+    # print()
+    # # print((c_bl_n_auth_base), "\n", (c_bl_n_auth_dc))
+
+    # print()
+    # print((c_bl_nn_auth_base), "\n", (c_bl_nn_auth_dc))
+
+    # print()
+    # # print((c_sl_n_auth_base), "\n",(c_sl_n_auth_dc))
+
+    # print()
+    # print((c_sl_nn_auth_base), "\n", (c_sl_nn_auth_dc))
+
+    # print()
+    # # print((t_bl_n_auth_base), "\n",(t_bl_n_auth_dc))
+
+    # print()
+    # print((t_bl_nn_auth_base), "\n", (t_bl_nn_auth_dc))
+
+    # print()
+    # # print((t_sl_n_auth_base), "\n",(t_sl_n_auth_dc))
+
+    # print()
+    # print((t_sl_nn_auth_base), "\n", (t_sl_nn_auth_dc))
