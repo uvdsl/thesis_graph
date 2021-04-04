@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
 CORES = 14
-ITERATIONS = 15
+ITERATIONS = 20
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
@@ -76,7 +76,7 @@ def generate(chats, agents, rounds=ROUNDS):
     return result
 
 
-@njit
+# @njit
 def add_node_to_graph(agent_id, node_id, chats, agents, graph, graph_transitive):
     # find all possible references of "other" chats the agent has access to
     references = List.empty_list(int64)
@@ -84,6 +84,8 @@ def add_node_to_graph(agent_id, node_id, chats, agents, graph, graph_transitive)
         chat_id = agents[agent_id].chats[other_c]
         chat_current_nodes = chats[chat_id].current_nodes
         for cn in chat_current_nodes:
+            if cn >= node_id:
+                print(node_id, "must not reference", cn, "from chat", chat_id, " : ", max(graph, key=int))
             if not cn in references:
                 references.append(cn)
 
@@ -148,24 +150,27 @@ def run(game, chats, agents, graph, graph_transitive, node_chat, node_agent, rou
                     break
             chats[chat_id].current_nodes.append(node_id)
 
-@njit(nogil=True)
+# @njit(nogil=True)
 def to_adj_matrix(graph, M):
-    for i in prange(len(graph)):
-        for k in prange(len(graph[i])):
-            j = graph[i][k]
+    for i in graph.keys():
+        # if len(graph[i]) == 0:
+            # continue
+        for j in graph[i]: # k as index
+            # j = graph[i][k]
+            if j >= M.shape[1]:
+                print(M.shape,j)
+                print()
+                print(graph)
+                print(M)
             M[i, j] = True
 
 # to adj list
-def from_adj_matrix(M):
+def from_adj_matrix(G):
     result = Dict.empty(int64, ListType(int64))
-    n,m = M.shape
-    for i in prange(n):
-        if result.get(i) is None:
-            result[i] = List.empty_list(int64)
-        for j in prange(m):
-            if not M[i,j]:
-                continue
-            result[i].append(j)
+    for edge in G.edges():
+        if result.get(edge[0]) is None:
+            result[edge[0]] = List.empty_list(int64)
+        result[edge[0]].append(edge[1])
     return result
 
 
@@ -189,7 +194,8 @@ def run_game(game, chats, agents, with_app_links=True, conf=True):
     node_agent[0] = -1
 
     run(game, chats, agents, graph, graph_transitive, node_chat, node_agent)
-    M = np.zeros((len(graph), len(graph)), dtype=bool)
+    size = max(graph, key=int) +1 # +1 to account for starting at 0 index
+    M = np.zeros((size, size), dtype=bool)
     to_adj_matrix(graph, M)
 
     # add APP links
@@ -293,18 +299,30 @@ def break_target(A, node_agent, agents, chats, node_chat):
         k += 1
 
 def recover(chats, agents, node_chat, node_agent, G):
+    for chat in chats:
+        chat.current_nodes = List.empty_list(int64)
+        for n in chat.current_nodes :
+            if n in G.nodes():
+                chat.current_nodes.append(n)
+
+
     nodes = list(G.nodes())
     index = max(nodes)+1
     G_old = G.copy()
-    
+    # print("Dummies:",[n for n in range(max(G.nodes())) if not n in G.nodes()])
+    G.add_nodes_from([n for n in range(max(G.nodes())) if not n in G.nodes()])
+
+    # print(nx.is_connected(G.to_undirected()), index, [n for n in range(max(G.nodes())) if not n in G.nodes()])
     for agent_id in range(len(agents)):
-        G.add_node(index+agent_id)    
+        new_node = index+agent_id
+        G.add_node(new_node) 
         for node in nodes:
             if G_old.in_degree(node) == 0 and node_chat[node] in agents[agent_id].chats:
-                G.add_edge(index+agent_id, node)
-                node_chat[index+agent_id] = node_chat[node]
-                node_agent[index+agent_id] = agent_id
-                # chats[node_chat[node]].current_nodes.append(index+agent_id)
+                G.add_edge(new_node, node)
+                node_chat[new_node] = -1
+                node_agent[new_node] = agent_id
+                chats[node_chat[node]].current_nodes.append(new_node)
+        # print(index, agent_id, new_node, G.edges(new_node))
 
     # print(nx.is_connected(G.to_undirected()), index, [n for n in range(max(G.nodes())) if not n in G.nodes()])
     G_t = nx.transitive_closure(G)
@@ -314,21 +332,23 @@ def recover(chats, agents, node_chat, node_agent, G):
     auth_rec_nn =_hits.hits_authorities(M_t, normalized=False)
     auth_rec_n = auth_rec_nn / auth_rec_nn.sum()
 
-    # rec_game = generate(chats,agents,rounds=10)
-    # rec_graph = from_adj_matrix(M)
-    # rec_graph_transitive = from_adj_matrix(M_t)
-    # run(rec_game, chats, agents, rec_graph, rec_graph_transitive, node_chat, node_agent, rounds=10)
-    # size = max(rec_graph, key=int)
-    # M = np.zeros((size,size), dtype=np.float64)
-    # to_adj_matrix(rec_graph, M)
-    # G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
-    # G_t = nx.transitive_closure(G_n)
-    # M_t = nx.to_numpy_array(G_t, dtype=np.float64)
+    rec_graph = from_adj_matrix(G)
+    rec_graph_transitive = from_adj_matrix(G_t)
+    rec_game = generate(chats,agents,rounds=10)
+    
+    run(rec_game, chats, agents, rec_graph, rec_graph_transitive, node_chat, node_agent, rounds=10)
+    
+    size = max(rec_graph, key=int) + 1 # +1 to account for starting at 0 index
+    M = np.zeros((size,size), dtype=np.float64)
+    to_adj_matrix(rec_graph, M)
+    G_n = nx.from_numpy_matrix(M, create_using=nx.DiGraph)
+    G_t = nx.transitive_closure(G_n)
+    M_t = nx.to_numpy_array(G_t, dtype=np.float64)
 
-    # auth_rec_long_nn =_hits.hits_authorities(M_t, normalized=False)
-    # auth_rec_long_n = auth_rec_long_nn / auth_rec_long_nn.sum()
-    auth_rec_long_nn = []
-    auth_rec_long_n = []
+    auth_rec_long_nn =_hits.hits_authorities(M_t, normalized=False)
+    auth_rec_long_n = auth_rec_long_nn / auth_rec_long_nn.sum()
+    # auth_rec_long_nn = []
+    # auth_rec_long_n = []
 
     return auth_rec_n, auth_rec_nn, auth_rec_long_n, auth_rec_long_nn
 
@@ -411,7 +431,7 @@ def add_plot(data, title):
                     #    0.015, 0.016, 0.017, 0.018, 0.019, 0.020, 0.021, 0.022, 0.023 
                        ])
     ax.set_title(title)
-    labels = ['base', 'disconnected', 'initial recovery' ] #, 'long term evolution']
+    labels = ['base', 'disconnected', 'initial recovery' , 'long term'] # ] #
     bp = ax.boxplot(data, labels=labels, showfliers=False)
     plt.savefig(f'./img/{title}.png')
     # print(np.median(data[0]), np.median(data[1]))
@@ -551,28 +571,28 @@ if __name__ == "__main__":
     t_sl_nn_auth_rec_long = extract(t_sl_nn_auth_rec_long)
 
     # print("c_bl_n")
-    add_plot([c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_n_auth_rec ], "c_bl_n")# c_bl_n_auth_rec_long], "c_bl_n")
+    add_plot([c_bl_n_auth_base, c_bl_n_auth_dc, c_bl_n_auth_rec, c_bl_n_auth_rec_long], "c_bl_n") #  ], "c_bl_n")#
     # print()
     # print("c_bl_nn")
-    add_plot([c_bl_nn_auth_base, c_bl_nn_auth_dc, c_bl_nn_auth_rec ], "c_bl_nn")# c_bl_nn_auth_rec_long], "c_bl_nn")
+    add_plot([c_bl_nn_auth_base, c_bl_nn_auth_dc, c_bl_nn_auth_rec, c_bl_nn_auth_rec_long], "c_bl_nn") #  ], "c_bl_nn")#
     # print()
     # print("c_sl_n")
-    add_plot([c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_n_auth_rec ], "c_sl_n")# c_sl_n_auth_rec_long], "c_sl_n")
+    add_plot([c_sl_n_auth_base, c_sl_n_auth_dc, c_sl_n_auth_rec, c_sl_n_auth_rec_long], "c_sl_n") #  ], "c_sl_n")#
     # print()
     # print("c_sl_nn")
-    add_plot([c_sl_nn_auth_base, c_sl_nn_auth_dc, c_sl_nn_auth_rec ], "c_sl_nn")# c_sl_nn_auth_rec_long], "c_sl_nn")
+    add_plot([c_sl_nn_auth_base, c_sl_nn_auth_dc, c_sl_nn_auth_rec, c_sl_nn_auth_rec_long], "c_sl_nn") #  ], "c_sl_nn")#
     # print()
     # print("t_bl_n")
-    add_plot([t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_n_auth_rec ], "t_bl_n")# t_bl_n_auth_rec_long], "t_bl_n")
+    add_plot([t_bl_n_auth_base, t_bl_n_auth_dc, t_bl_n_auth_rec, t_bl_n_auth_rec_long], "t_bl_n") #  ], "t_bl_n")#
     # print()
     # print("t_bl_nn")
-    add_plot([t_bl_nn_auth_base, t_bl_nn_auth_dc, t_bl_nn_auth_rec ], "t_bl_nn")# t_bl_nn_auth_rec_long], "t_bl_nn")
+    add_plot([t_bl_nn_auth_base, t_bl_nn_auth_dc, t_bl_nn_auth_rec, t_bl_nn_auth_rec_long], "t_bl_nn") #  ], "t_bl_nn")#
     # print()
     # print("t_sl_n")
-    add_plot([t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_n_auth_rec ], "t_sl_n")# t_sl_n_auth_rec_long], "t_sl_n")
+    add_plot([t_sl_n_auth_base, t_sl_n_auth_dc, t_sl_n_auth_rec, t_sl_n_auth_rec_long], "t_sl_n") #  ], "t_sl_n")#
     # print()
     # print("t_sl_nn")
-    add_plot([t_sl_nn_auth_base, t_sl_nn_auth_dc, t_sl_nn_auth_rec ], "t_sl_nn")# t_sl_nn_auth_rec_long], "t_sl_nn")
+    add_plot([t_sl_nn_auth_base, t_sl_nn_auth_dc, t_sl_nn_auth_rec, t_sl_nn_auth_rec_long], "t_sl_nn") #  ], "t_sl_nn")#
     # print()
 
     # plt.show()
