@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
 CORES = 14
-ITERATIONS = 1000
+ITERATIONS = 1
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
@@ -210,9 +210,10 @@ def run_game(game, chats, agents, with_app_links=True, conf=True, no_score_links
         chats_last_node = np.zeros(len(chats))
         for n in range(M.shape[0]):
             last_node_of_chat = int(chats_last_node[node_chat[n]])
-            if last_node_of_chat != 0:
-                M[n, last_node_of_chat] = True
+            # if last_node_of_chat != 0:
+            M[n, last_node_of_chat] = True
             chats_last_node[node_chat[n]] = n
+        
 
     try:
         # print("Normalized")
