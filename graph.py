@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import ks_2samp, describe
 
 CORES = 14
-ITERATIONS = 1
+ITERATIONS = 1000
 NUMBER_OF_AGENTS = 50
 ROUNDS = 100
 ACTIVATION = 0.1
